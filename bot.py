@@ -88,7 +88,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         # دانلود فایل (تا سقف 2 گیگابایت به لطف سرور لوکال)
-        file = await context.bot.get_file(file_obj.file_id)
+        # افزایش timeout به 3600 ثانیه (1 ساعت) برای فایل‌های حجیم ضروری است
+        file = await context.bot.get_file(file_obj.file_id, read_timeout=3600, connect_timeout=3600)
         await file.download_to_drive(input_file)
         
         await status_msg.edit_text("⚙️ در حال پردازش و تبدیل فرمت به MP4...")
@@ -106,7 +107,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         with open(output_file, "rb") as video_stream:
             await message.reply_document(
                 document=video_stream,
-                caption="✅ فایل شما با موفقیت به MP4 تبدیل شد."
+                caption="✅ فایل شما با موفقیت به MP4 تبدیل شد.",
+                read_timeout=3600,
+                write_timeout=3600,
+                connect_timeout=3600
             )
             
         await status_msg.delete()
