@@ -1,0 +1,15 @@
+[Unit]
+Description=Telegram Video Converter Bot
+After=network.target
+
+[Service]
+User=root
+# اگر می‌خواهید با کاربر دیگری اجرا شود، root را تغییر دهید. مثال: ahmad
+WorkingDirectory=/var/www/html/ahmad/bot2
+Environment="PATH=/var/www/html/ahmad/bot2/venv/bin"
+ExecStart=/var/www/html/ahmad/bot2/venv/bin/python /var/www/html/ahmad/bot2/bot.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
