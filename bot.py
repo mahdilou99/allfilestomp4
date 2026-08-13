@@ -133,7 +133,7 @@ def main():
 
     # تنظیم ربات برای استفاده از Local API Server
     # این بخش بسیار مهم است تا محدودیت‌های تلگرام برداشته شود
-    app = Application.builder().token(BOT_TOKEN).base_url(LOCAL_API_URL).base_file_url(LOCAL_API_FILE_URL).build()
+    app = Application.builder().token(BOT_TOKEN).base_url(LOCAL_API_URL).base_file_url(LOCAL_API_FILE_URL).local_mode(True).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO, handle_document))
