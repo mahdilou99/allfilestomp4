@@ -105,9 +105,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # ارسال فایل تبدیل شده به تلگرام
         with open(output_file, "rb") as video_stream:
-            await message.reply_document(
-                document=video_stream,
+            await message.reply_video(
+                video=video_stream,
                 caption="✅ فایل شما با موفقیت به MP4 تبدیل شد.",
+                supports_streaming=True,
                 read_timeout=3600,
                 write_timeout=3600,
                 connect_timeout=3600
