@@ -71,9 +71,9 @@ async def convert_video_to_mp4(input_path: str, output_path: str) -> bool:
     return True
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # این هندلر برای document و video کار می‌کند
+    # این هندلر برای document و video و audio و voice کار می‌کند
     message = update.message
-    file_obj = message.document or message.video
+    file_obj = message.document or message.video or message.audio or message.voice
     
     if not file_obj:
         return
@@ -141,7 +141,7 @@ def main():
     app = Application.builder().token(BOT_TOKEN).base_url(LOCAL_API_URL).base_file_url(LOCAL_API_FILE_URL).local_mode(True).build()
     
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO, handle_document))
+    app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.VOICE, handle_document))
     
     logger.info("Bot is running with Local API Server...")
     app.run_polling()
