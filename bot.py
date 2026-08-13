@@ -84,7 +84,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     base_name = os.path.splitext(file_name)[0]
     input_file = os.path.join(TEMP_DIR, f"{message.message_id}_{file_name}")
-    output_file = os.path.join(TEMP_DIR, f"{message.message_id}_{base_name}.mp4")
+    output_file = os.path.join(TEMP_DIR, f"{message.message_id}_{base_name}_converted.mp4")
 
     try:
         # دانلود فایل (تا سقف 2 گیگابایت به لطف سرور لوکال)
