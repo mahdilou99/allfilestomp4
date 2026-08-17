@@ -1,6 +1,8 @@
 import os
 import asyncio
 import logging
+import httpx
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -17,16 +19,32 @@ logger = logging.getLogger(__name__)
 
 # دریافت تنظیمات از متغیرهای محیطی
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-LOCAL_API_URL = os.getenv("LOCAL_API_URL", "http://127.0.0.1:8081/bot")
-LOCAL_API_FILE_URL = os.getenv("LOCAL_API_FILE_URL", "http://127.0.0.1:8081/file/bot")
+LOCAL_API_URL = os.getenv("LOCAL_API_URL", "http://127.0.0.1:8042/bot")
+LOCAL_API_FILE_URL = os.getenv("LOCAL_API_FILE_URL", "http://127.0.0.1:8042/file/bot")
 TEMP_DIR = os.getenv("TEMP_DIR", "/var/www/html/ahmad/bot2/temp")
 
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "سلام! لطفاً فایل ویدیویی خود را ارسال کنید تا آن را به .mp4 تبدیل کنم."
+        "سلام! لطفاً فایل ویدیویی/صوتی خود را ارسال کنید یا یک **لینک مستقیم (URL)** بفرستید تا آن را به .mp4 تبدیل کنم.",
+        parse_mode="Markdown"
     )
+
+async def download_file_from_url(url: str, dest_path: str) -> bool:
+    """دانلود فایل از لینک با استفاده از httpx"""
+    try:
+        # استفاده از تایم‌اوت بالا برای فایل‌های حجیم
+        async with httpx.AsyncClient(follow_redirects=True, timeout=3600.0) as client:
+            async with client.stream('GET', url) as response:
+                response.raise_for_status()
+                with open(dest_path, 'wb') as f:
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        f.write(chunk)
+        return True
+    except Exception as e:
+        logger.error(f"Error downloading from URL: {e}")
+        return False
 
 async def convert_video_to_mp4(input_path: str, output_path: str) -> bool:
     """تبدیل سریع فایل‌های ویدیویی (شامل ts) به MP4"""
@@ -70,28 +88,15 @@ async def convert_video_to_mp4(input_path: str, output_path: str) -> bool:
              return False
     return True
 
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # این هندلر برای document و video و audio و voice کار می‌کند
-    message = update.message
-    file_obj = message.document or message.video or message.audio or message.voice
-    
-    if not file_obj:
-        return
-        
-    file_name = getattr(file_obj, 'file_name', 'video.ts')
-    
-    status_msg = await message.reply_text("⏳ در حال دریافت فایل...")
-    
+async def process_and_send_video(message, input_file, file_name, status_msg):
+    """تابع کمکی برای تبدیل و ارسال ویدیو"""
     base_name = os.path.splitext(file_name)[0]
-    input_file = os.path.join(TEMP_DIR, f"{message.message_id}_{file_name}")
+    if not base_name:
+        base_name = "video"
+        
     output_file = os.path.join(TEMP_DIR, f"{message.message_id}_{base_name}_converted.mp4")
 
     try:
-        # دانلود فایل (تا سقف 2 گیگابایت به لطف سرور لوکال)
-        # افزایش timeout به 3600 ثانیه (1 ساعت) برای فایل‌های حجیم ضروری است
-        file = await context.bot.get_file(file_obj.file_id, read_timeout=3600, connect_timeout=3600)
-        await file.download_to_drive(input_file)
-        
         await status_msg.edit_text("⚙️ در حال پردازش و تبدیل فرمت به MP4...")
         
         # تبدیل فرمت
@@ -117,7 +122,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.delete()
 
     except Exception as e:
-        logger.error(f"Error handling file: {e}")
+        logger.error(f"Error handling processing/sending: {e}")
         try:
             await status_msg.edit_text("❌ خطایی در پردازش درخواست شما رخ داد.")
         except:
@@ -125,12 +130,85 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     finally:
         # پاکسازی فایلهای موقت برای جلوگیری از پر شدن سرور
-        for path in [input_file, output_file]:
-            if os.path.exists(path):
-                try:
-                    os.remove(path)
-                except OSError as e:
-                    logger.error(f"Error removing {path}: {e}")
+        if os.path.exists(output_file):
+            try:
+                os.remove(output_file)
+            except OSError as e:
+                logger.error(f"Error removing {output_file}: {e}")
+
+async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    # استخراج لینک از پیام
+    url = ""
+    for entity in message.entities:
+        if entity.type == 'url':
+            url = message.text[entity.offset:entity.offset + entity.length]
+            break
+            
+    if not url:
+        return
+
+    status_msg = await message.reply_text("⏳ در حال دانلود فایل از لینک...")
+    
+    parsed_url = urlparse(url)
+    file_name = os.path.basename(parsed_url.path)
+    if not file_name:
+        file_name = "downloaded_video.ts"
+        
+    input_file = os.path.join(TEMP_DIR, f"{message.message_id}_{file_name}")
+
+    try:
+        # دانلود فایل
+        success = await download_file_from_url(url, input_file)
+        if not success:
+            await status_msg.edit_text("❌ خطا در دانلود فایل از لینک. لطفاً مطمئن شوید لینک مستقیم و سالم است.")
+            return
+            
+        # ادامه پردازش
+        await process_and_send_video(message, input_file, file_name, status_msg)
+        
+    finally:
+        if os.path.exists(input_file):
+            try:
+                os.remove(input_file)
+            except:
+                pass
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # این هندلر برای document و video و audio و voice کار می‌کند
+    message = update.message
+    file_obj = message.document or message.video or message.audio or message.voice
+    
+    if not file_obj:
+        return
+        
+    file_name = getattr(file_obj, 'file_name', 'video.ts')
+    
+    status_msg = await message.reply_text("⏳ در حال دریافت فایل از تلگرام...")
+    
+    input_file = os.path.join(TEMP_DIR, f"{message.message_id}_{file_name}")
+
+    try:
+        # دانلود فایل (تا سقف 2 گیگابایت به لطف سرور لوکال)
+        # افزایش timeout به 3600 ثانیه (1 ساعت) برای فایل‌های حجیم ضروری است
+        file = await context.bot.get_file(file_obj.file_id, read_timeout=3600, connect_timeout=3600)
+        await file.download_to_drive(input_file)
+        
+        # ادامه پردازش
+        await process_and_send_video(message, input_file, file_name, status_msg)
+
+    except Exception as e:
+        logger.error(f"Error handling file download: {e}")
+        try:
+            await status_msg.edit_text("❌ خطایی در دانلود فایل رخ داد.")
+        except:
+            pass
+    finally:
+        if os.path.exists(input_file):
+            try:
+                os.remove(input_file)
+            except:
+                pass
 
 def main():
     if not BOT_TOKEN:
@@ -142,6 +220,7 @@ def main():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.Document.ALL | filters.VIDEO | filters.AUDIO | filters.VOICE, handle_document))
+    app.add_handler(MessageHandler(filters.TEXT & filters.Entity("url"), handle_url))
     
     logger.info("Bot is running with Local API Server...")
     app.run_polling()
